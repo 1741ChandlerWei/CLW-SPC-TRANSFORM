@@ -39,36 +39,53 @@ function r4(v: number | null | undefined): number | string {
 }
 
 // ─────────────────────────────────────────────────────
-// Single-file output  (matches 整理範例 exactly)
-// Col A = 類別, Col B = 項目, Col C+ = model values
+// V1.8 分群輸出：相同部件清單的型號放同一個 Sheet
 // ─────────────────────────────────────────────────────
-export async function buildOutputExcel(spec: ParsedSpec): Promise<Buffer> {
-  const wb = new ExcelJS.Workbook()
-  wb.creator = 'CLW-SPC-TRANSFORM'
-  const ws = wb.addWorksheet('整理')
 
-  const models = spec.models
-  const allParts = spec.allPartNames
+/** 以部件名稱清單（排序後 join）為 key，將型號動態分群 */
+function groupModelsByParts(models: ModelData[]): ModelData[][] {
+  const groups = new Map<string, ModelData[]>()
+  for (const m of models) {
+    const key = Object.keys(m.parts).sort().join('|')
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push(m)
+  }
+  return Array.from(groups.values())
+}
+
+/** 產生 Sheet 名稱（最多 31 字元，Excel 限制）*/
+function makeSheetName(groupModels: ModelData[]): string {
+  const joined = groupModels.map(m => m.modelName).join(' / ')
+  return joined.length <= 31 ? joined : joined.slice(0, 28) + '...'
+}
+
+/** 將一群型號寫入單一 Worksheet */
+function writeGroupSheet(
+  ws: ExcelJS.Worksheet,
+  models: ModelData[],
+  spec: ParsedSpec
+) {
+  // 該群的部件清單：依解析時的出現順序
+  const partSet = new Set<string>()
+  for (const m of models) Object.keys(m.parts).forEach(p => partSet.add(p))
+  const groupParts = Array.from(partSet)
+
   const nM = models.length
 
-  // Column widths
-  ws.getColumn(1).width = 12   // A: 類別
-  ws.getColumn(2).width = 26   // B: 項目
+  ws.getColumn(1).width = 12
+  ws.getColumn(2).width = 26
   for (let i = 0; i < nM; i++) ws.getColumn(3 + i).width = 16
 
   let r = 1
 
   // ── Row 1: 版次 header ──
   ws.getRow(r).height = 24
-  // A1: "版次"
   const a1 = ws.getCell(r, 1)
   a1.value = '版次'
   styleCell(a1, { bold: true, color: NAVYFG, bg: NAVY, hAlign: 'center' })
-  // B1: empty (same style)
   const b1 = ws.getCell(r, 2)
   b1.value = ''
   styleCell(b1, { bold: true, color: NAVYFG, bg: NAVY, hAlign: 'center' })
-  // C1 … last col: filename merged
   ws.mergeCells(r, 3, r, 2 + nM)
   const c1 = ws.getCell(r, 3)
   c1.value = spec.fileName + (spec.version ? `  ｜  ${spec.version}` : '')
@@ -77,15 +94,12 @@ export async function buildOutputExcel(spec: ParsedSpec): Promise<Buffer> {
 
   // ── Row 2: 型號 ──
   ws.getRow(r).height = 22
-  // A2: "型號"
   const a2 = ws.getCell(r, 1)
   a2.value = '型號'
   styleCell(a2, { bold: true, bg: LBLUE, hAlign: 'center' })
-  // B2: empty
   const b2 = ws.getCell(r, 2)
   b2.value = ''
   styleCell(b2, { bold: true, bg: LBLUE, hAlign: 'center' })
-  // C2+: model names
   models.forEach((m, i) => {
     const c = ws.getCell(r, 3 + i)
     c.value = m.modelName
@@ -107,15 +121,12 @@ export async function buildOutputExcel(spec: ParsedSpec): Promise<Buffer> {
   specDefs.forEach(([label, getter], idx) => {
     ws.getRow(r).height = 18
     const bg = idx % 2 === 1 ? ALT : WHITE
-    // A: 類別
     const ca = ws.getCell(r, 1)
     ca.value = idx === 0 ? '規格' : ''
     styleCell(ca, { bold: true, bg: SECBG, hAlign: 'center' })
-    // B: 項目
     const cb = ws.getCell(r, 2)
     cb.value = label
     styleCell(cb, { bg })
-    // C+: values
     models.forEach((m, i) => {
       const cv = ws.getCell(r, 3 + i)
       cv.value = getter(m)
@@ -126,20 +137,17 @@ export async function buildOutputExcel(spec: ParsedSpec): Promise<Buffer> {
 
   // ── 重量 section header ──
   ws.getRow(r).height = 20
-  const wh_a = ws.getCell(r, 1)
-  wh_a.value = '重量'
-  styleCell(wh_a, { bold: true, bg: SECBG, hAlign: 'center' })
-  const wh_b = ws.getCell(r, 2)
-  wh_b.value = 'Name'
-  styleCell(wh_b, { bold: true, bg: LBLUE, hAlign: 'center' })
+  ws.getCell(r, 1).value = '重量'
+  styleCell(ws.getCell(r, 1), { bold: true, bg: SECBG, hAlign: 'center' })
+  ws.getCell(r, 2).value = 'Name'
+  styleCell(ws.getCell(r, 2), { bold: true, bg: LBLUE, hAlign: 'center' })
   models.forEach((_, i) => {
-    const c = ws.getCell(r, 3 + i)
-    c.value = 'Mass (g)'
-    styleCell(c, { bold: true, bg: LBLUE, hAlign: 'center' })
+    ws.getCell(r, 3 + i).value = 'Mass (g)'
+    styleCell(ws.getCell(r, 3 + i), { bold: true, bg: LBLUE, hAlign: 'center' })
   })
   r++
 
-  allParts.forEach((part, pi) => {
+  groupParts.forEach((part, pi) => {
     ws.getRow(r).height = 18
     const bg = pi % 2 === 1 ? ALT : WHITE
     ws.getCell(r, 1).value = ''
@@ -166,7 +174,7 @@ export async function buildOutputExcel(spec: ParsedSpec): Promise<Buffer> {
   })
   r++
 
-  allParts.forEach((part, pi) => {
+  groupParts.forEach((part, pi) => {
     ws.getRow(r).height = 18
     const bg = pi % 2 === 1 ? ALT : WHITE
     ws.getCell(r, 1).value = ''
@@ -193,7 +201,7 @@ export async function buildOutputExcel(spec: ParsedSpec): Promise<Buffer> {
   })
   r++
 
-  allParts.forEach((part, pi) => {
+  groupParts.forEach((part, pi) => {
     ws.getRow(r).height = 18
     const bg = pi % 2 === 1 ? ALT : WHITE
     ws.getCell(r, 1).value = ''
@@ -209,10 +217,31 @@ export async function buildOutputExcel(spec: ParsedSpec): Promise<Buffer> {
   })
 
   ws.views = [{ state: 'frozen', xSplit: 2, ySplit: 2, activeCell: 'C3' }]
+}
+
+export async function buildOutputExcel(spec: ParsedSpec): Promise<Buffer> {
+  const wb = new ExcelJS.Workbook()
+  wb.creator = 'CLW-SPC-TRANSFORM'
+
+  const groups = groupModelsByParts(spec.models)
+
+  // 確保 Sheet 名稱不重複
+  const usedNames = new Set<string>()
+  for (const group of groups) {
+    let name = makeSheetName(group)
+    let suffix = 2
+    while (usedNames.has(name)) {
+      name = makeSheetName(group).slice(0, 28) + `(${suffix++})`
+    }
+    usedNames.add(name)
+    const ws = wb.addWorksheet(name)
+    writeGroupSheet(ws, group, spec)
+  }
 
   const buf = await wb.xlsx.writeBuffer()
   return Buffer.from(buf)
 }
+
 
 // ─────────────────────────────────────────────────────
 // Compare output
