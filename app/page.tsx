@@ -202,7 +202,7 @@ export default function Page() {
           </div>
         )}
 
-        <p style={styles.footer}>版次 V 1.10</p>
+        <p style={styles.footer}>版次 V 1.11</p>
       </div>
     </main>
   )
