@@ -133,11 +133,13 @@ export function parseSpecFile(buffer: Buffer): ParsedSpec {
 
       // Components rows
       if (inComp) {
-        const name = String(row?.[2] || '').trim()
-        if (!name) {
+        // Stop at "CAD generated Mass" row
+        if (String(row?.[2] || '').includes('CAD generated')) {
           inComp = false
           continue
         }
+        const name = String(row?.[2] || '').trim()
+        if (!name) continue  // skip empty rows, don't stop
         const mass = toNum(row?.[3])
         const dens_imp = toNum(row?.[5])
         const dens_met = dens_imp !== null ? r4(dens_imp * G_IN3_TO_G_CM3) : null
