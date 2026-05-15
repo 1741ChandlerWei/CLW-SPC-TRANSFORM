@@ -1,5 +1,5 @@
 import ExcelJS from 'exceljs'
-import { ParsedSpec, ModelData, Component } from './parser'
+import { ParsedSpec, ModelData } from './parser'
 
 // Colors
 const NAVY   = 'FF1F4E79'
@@ -151,14 +151,14 @@ function buildMainSheet(ws: ExcelJS.Worksheet, spec: ParsedSpec) {
   })
   row++
 
-  for (const compName of spec.allComponentNames) {
+  for (const compName of spec.allPartNames) {
     ws.mergeCells(row, 1, row, 2)
     ws.getCell(row, 1).value = ''
     styleCell(ws.getCell(row, 1), { bg: row % 2 === 0 ? ALT : WHITE })
     ws.getCell(row, 3).value = compName
     styleCell(ws.getCell(row, 3), { bg: row % 2 === 0 ? ALT : WHITE })
     models.forEach((m, mi) => {
-      const comp = m.components.find(c => c.name === compName)
+      const comp = m.parts[compName] ? {mass_g: m.parts[compName].mass, density_g_in3: m.parts[compName].density_imp, density_g_cm3: m.parts[compName].density_met} : null
       const c = ws.getCell(row, colOffset + mi)
       c.value = comp ? comp.mass_g : ''
       styleCell(c, { hAlign: 'center', bg: row % 2 === 0 ? ALT : WHITE })
@@ -179,14 +179,14 @@ function buildMainSheet(ws: ExcelJS.Worksheet, spec: ParsedSpec) {
   })
   row++
 
-  for (const compName of spec.allComponentNames) {
+  for (const compName of spec.allPartNames) {
     ws.mergeCells(row, 1, row, 2)
     ws.getCell(row, 1).value = ''
     styleCell(ws.getCell(row, 1), { bg: row % 2 === 0 ? ALT : WHITE })
     ws.getCell(row, 3).value = compName
     styleCell(ws.getCell(row, 3), { bg: row % 2 === 0 ? ALT : WHITE })
     models.forEach((m, mi) => {
-      const comp = m.components.find(c => c.name === compName)
+      const comp = m.parts[compName] ? {mass_g: m.parts[compName].mass, density_g_in3: m.parts[compName].density_imp, density_g_cm3: m.parts[compName].density_met} : null
       const c = ws.getCell(row, colOffset + mi)
       c.value = comp?.density_g_in3 ?? ''
       styleCell(c, { hAlign: 'center', bg: row % 2 === 0 ? ALT : WHITE })
@@ -207,14 +207,14 @@ function buildMainSheet(ws: ExcelJS.Worksheet, spec: ParsedSpec) {
   })
   row++
 
-  for (const compName of spec.allComponentNames) {
+  for (const compName of spec.allPartNames) {
     ws.mergeCells(row, 1, row, 2)
     ws.getCell(row, 1).value = ''
     styleCell(ws.getCell(row, 1), { bg: row % 2 === 0 ? ALT : WHITE })
     ws.getCell(row, 3).value = compName
     styleCell(ws.getCell(row, 3), { bg: row % 2 === 0 ? ALT : WHITE })
     models.forEach((m, mi) => {
-      const comp = m.components.find(c => c.name === compName)
+      const comp = m.parts[compName] ? {mass_g: m.parts[compName].mass, density_g_in3: m.parts[compName].density_imp, density_g_cm3: m.parts[compName].density_met} : null
       const c = ws.getCell(row, colOffset + mi)
       c.value = comp?.density_g_cm3 ?? ''
       styleCell(c, { hAlign: 'center', bg: row % 2 === 0 ? ALT : WHITE })
@@ -239,8 +239,8 @@ function buildCompareSheet(
     ...specB.models.map(m => m.modelName),
   ]))
   const allComps = Array.from(new Set([
-    ...specA.allComponentNames,
-    ...specB.allComponentNames,
+    ...specA.allPartNames,
+    ...specB.allPartNames,
   ]))
 
   // Title
@@ -316,10 +316,10 @@ function buildCompareSheet(
     row++
 
     for (const compName of allComps) {
-      const cA = mA?.components.find(c => c.name === compName)
-      const cB = mB?.components.find(c => c.name === compName)
-      const vA = cA?.mass_g ?? null
-      const vB = cB?.mass_g ?? null
+      const cA = mA?.parts[compName] ?? null
+      const cB = mB?.parts[compName] ?? null
+      const vA = cA?.mass ?? null
+      const vB = cB?.mass ?? null
       const isNew = vA === null && vB !== null
       const isRemoved = vA !== null && vB === null
       const diff = vA !== null && vB !== null ? r4(vB - vA) : null
