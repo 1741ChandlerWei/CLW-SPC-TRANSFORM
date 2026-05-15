@@ -53,9 +53,16 @@ function groupModelsByParts(models: ModelData[]): ModelData[][] {
   return Array.from(groups.values())
 }
 
-/** 產生 Sheet 名稱（最多 31 字元，Excel 限制）*/
+/** 產生 Sheet 名稱（最多 31 字元，Excel 限制）
+ *  Excel 不允許: * ? : \ / [ ]
+ *  用「+」取代「/」分隔型號名稱
+ */
 function makeSheetName(groupModels: ModelData[]): string {
-  const joined = groupModels.map(m => m.modelName).join(' / ')
+  // 先把每個型號名稱內的非法字元清掉
+  const clean = groupModels.map(m =>
+    m.modelName.replace(/[*?:\\/\[\]]/g, '-')
+  )
+  const joined = clean.join('+')
   return joined.length <= 31 ? joined : joined.slice(0, 28) + '...'
 }
 
