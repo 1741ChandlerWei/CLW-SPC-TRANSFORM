@@ -64,9 +64,12 @@ export function parseSpecFile(buffer: Buffer): ParsedSpec {
     }
   }
 
-  // ── Detect model sheets: starts with 'i', has 'Final Head' label with numeric value ──
+  // ── Detect model sheets: starts with 'i', visible, has 'Final Head' label with numeric value ──
   const modelSheetNames = wb.SheetNames.filter(name => {
     if (!name.startsWith('i')) return false
+    // 跳過隱藏 Sheet（Hidden=1 or 2）
+    const sheetMeta = wb.Workbook?.Sheets?.find((s: {name: string, Hidden?: number}) => s.name === name)
+    if (sheetMeta?.Hidden) return false
     const ws = wb.Sheets[name]
     if (!ws) return false
     const rows = XLSX.utils.sheet_to_json<(string | number | null)[]>(ws, {
