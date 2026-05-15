@@ -92,7 +92,7 @@ export default function Page() {
       <div style={styles.card}>
         {/* Header */}
         <div style={styles.header}>
-          <div style={styles.logo}>CLW</div>
+          <div style={styles.logo}>適用客戶<br/>CLW</div>
           <div>
             <h1 style={styles.title}>規格表轉換工具</h1>
             <p style={styles.subtitle}>CLW-SPC-TRANSFORM ｜ Spec Parser & Comparator</p>
@@ -202,7 +202,7 @@ export default function Page() {
           </div>
         )}
 
-        <p style={styles.footer}>根莖葉工作室 ｜ CLW-SPC-TRANSFORM</p>
+        <p style={styles.footer}>版次 V 1.4</p>
       </div>
     </main>
   )
@@ -238,14 +238,17 @@ const styles: Record<string, React.CSSProperties> = {
     background: 'linear-gradient(135deg, #1565c0, #0288d1)',
     color: '#fff',
     fontWeight: 'bold',
-    fontSize: '20px',
+    fontSize: '13px',
     width: '52px',
     height: '52px',
     borderRadius: '12px',
     display: 'flex',
+    flexDirection: 'column' as const,
     alignItems: 'center',
     justifyContent: 'center',
     flexShrink: 0,
+    lineHeight: 1.3,
+    textAlign: 'center' as const,
   },
   title: { margin: 0, fontSize: '22px', fontWeight: 700, color: '#1a237e' },
   subtitle: { margin: '4px 0 0', fontSize: '12px', color: '#78909c' },
