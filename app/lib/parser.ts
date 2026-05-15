@@ -1,6 +1,3 @@
-// Parser runs server-side only (Node.js) using xlsx with data_only equivalent
-// Strategy: use xlsx with cellFormula:false to get computed values
-
 import * as XLSX from 'xlsx'
 
 const IN_TO_MM = 25.4
@@ -8,8 +5,8 @@ const G_IN3_TO_G_CM3 = 0.0610237441
 
 export interface PartData {
   mass: number | null
-  density_imp: number | null   // g/in³
-  density_met: number | null   // g/cm³
+  density_imp: number | null
+  density_met: number | null
 }
 
 export interface ModelData {
@@ -43,10 +40,9 @@ function r4(v: number | null): number | null {
 }
 
 export function parseSpecFile(buffer: Buffer): ParsedSpec {
-  // Read with cellDates and raw values (computed, not formulas)
   const wb = XLSX.read(buffer, {
     type: 'buffer',
-    cellFormula: false,   // don't parse formulas, use cached values
+    cellFormula: false,
     cellNF: false,
     cellStyles: false,
   })
@@ -55,11 +51,12 @@ export function parseSpecFile(buffer: Buffer): ParsedSpec {
   let version = ''
   if (wb.SheetNames.includes('Revision Record')) {
     const ws = wb.Sheets['Revision Record']
-    const rows = XLSX.utils.sheet_to_json<(string | number)[]>(ws, { header: 1, defval: null }) as (string | number | null)[][]
+    const rows = XLSX.utils.sheet_to_json<(string | number | null)[]>(ws, {
+      header: 1, defval: null
+    }) as (string | number | null)[][]
     for (let i = rows.length - 1; i >= 1; i--) {
-      const row = rows[i]
-      const rev = row?.[0]
-      const desc = row?.[1]
+      const rev = rows[i]?.[0]
+      const desc = rows[i]?.[1]
       if (rev && String(rev).trim() && desc && String(desc).trim()) {
         version = `Rev ${String(rev).trim()}`
         break
@@ -67,26 +64,20 @@ export function parseSpecFile(buffer: Buffer): ParsedSpec {
     }
   }
 
-  // ── Identify model sheets: start with 'i', have 'Final Head' in B2 area ──
-  const modelSheets = wb.SheetNames.filter(name => {
+  // ── Detect model sheets: starts with 'i', has 'Final Head' label with numeric value ──
+  const modelSheetNames = wb.SheetNames.filter(name => {
     if (!name.startsWith('i')) return false
     const ws = wb.Sheets[name]
     if (!ws) return false
-    // Check if B2 or nearby has a numeric Final Head Weight
     const rows = XLSX.utils.sheet_to_json<(string | number | null)[]>(ws, {
-      header: 1, defval: null, range: 0
+      header: 1, defval: null
     }) as (string | number | null)[][]
 
-    // Look for 'Final Head' label and a numeric value
     for (let i = 0; i < Math.min(15, rows.length); i++) {
-      const label = String(rows[i]?.[0] || '')
+      const label = String(rows[i]?.[0] || '').trim()
       if (label.includes('Final Head')) {
         const val = rows[i]?.[1]
-        // Must have a numeric cached value (not a formula string)
         if (typeof val === 'number' && val > 0) return true
-        // If val is null/string but hosel is present = still a valid model sheet
-        const hosel = rows.find(r => String(r?.[0] || '').includes('Hosel OD'))?.[1]
-        if (typeof hosel === 'number') return true
       }
     }
     return false
@@ -94,7 +85,7 @@ export function parseSpecFile(buffer: Buffer): ParsedSpec {
 
   const models: ModelData[] = []
 
-  for (const sname of modelSheets) {
+  for (const sname of modelSheetNames) {
     const ws = wb.Sheets[sname]
     const rows = XLSX.utils.sheet_to_json<(string | number | null)[]>(ws, {
       header: 1, defval: null
@@ -112,62 +103,52 @@ export function parseSpecFile(buffer: Buffer): ParsedSpec {
       parts: {},
     }
 
-    // ── Spec values: rows 0-14, col A = label, col B = value ──
-    for (let i = 0; i < Math.min(20, rows.length); i++) {
-      const label = String(rows[i]?.[0] || '').trim()
-      const val = toNum(rows[i]?.[1])
+    let inComp = false
 
-      if (label.includes('Final Head')) model.finalHeadWeight = val
-      else if (label === 'Loft Angle') model.loftAngle = r4(val)
-      else if (label === 'Lie Angle') model.lieAngle = r4(val)
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i]
+      const label = String(row?.[0] || '').trim()
+      const val = row?.[1]
+
+      // Spec values
+      if (label.includes('Final Head')) model.finalHeadWeight = toNum(val)
+      else if (label === 'Loft Angle') model.loftAngle = r4(toNum(val))
+      else if (label === 'Lie Angle') model.lieAngle = r4(toNum(val))
       else if (label === 'Hosel OD') {
-        model.hoselOD_in = val
-        model.hoselOD_mm = val !== null ? r4(val * IN_TO_MM) : null
+        const n = toNum(val)
+        model.hoselOD_in = n
+        model.hoselOD_mm = n !== null ? r4(n * IN_TO_MM) : null
       }
       else if (label.startsWith('F1/E')) {
-        model.f1e_in = r4(val)
-        model.f1e_mm = val !== null ? r4(val * IN_TO_MM) : null
+        const n = toNum(val)
+        model.f1e_in = r4(n)
+        model.f1e_mm = n !== null ? r4(n * IN_TO_MM) : null
       }
-    }
 
-    // Skip models with no valid Final Head Weight (e.g. iSW with formulas only)
-    if (model.finalHeadWeight === null || model.finalHeadWeight === 0) {
-      // Try Eng Targeted Mass as fallback
-      const engRow = rows.find(r => String(r?.[0] || '').includes('Eng Targeted'))
-      const engVal = toNum(engRow?.[1])
-      if (engVal && engVal > 0) model.finalHeadWeight = engVal
-      else continue // skip this model
-    }
-
-    // ── Components table: find row with col[0]='Components' col[2]='Name' ──
-    let compRowIdx = -1
-    for (let i = 0; i < rows.length; i++) {
-      if (String(rows[i]?.[0] || '') === 'Components' && String(rows[i]?.[2] || '') === 'Name') {
-        compRowIdx = i
-        break
+      // Components table header
+      if (label === 'Components' && String(row?.[2] || '').trim() === 'Name') {
+        inComp = true
+        continue
       }
-    }
 
-    if (compRowIdx >= 0) {
-      for (let i = compRowIdx + 1; i < rows.length; i++) {
-        const row = rows[i]
+      // Components rows
+      if (inComp) {
         const name = String(row?.[2] || '').trim()
-        // Stop when name is empty and no component number
-        if (!name) break
+        if (!name) {
+          inComp = false
+          continue
+        }
         const mass = toNum(row?.[3])
-        const density_imp = toNum(row?.[5])
-        const density_met = density_imp !== null
-          ? r4(density_imp * G_IN3_TO_G_CM3)
-          : null
-
-        model.parts[name] = { mass, density_imp, density_met }
+        const dens_imp = toNum(row?.[5])
+        const dens_met = dens_imp !== null ? r4(dens_imp * G_IN3_TO_G_CM3) : null
+        model.parts[name] = { mass, density_imp: dens_imp, density_met: dens_met }
       }
     }
 
     models.push(model)
   }
 
-  // ── Collect all unique part names (preserve insertion order) ──
+  // All unique part names in order of first appearance
   const partSet = new Set<string>()
   for (const m of models) {
     Object.keys(m.parts).forEach(p => partSet.add(p))
